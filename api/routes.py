@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException
-from models import User
+from fastapi import APIRouter, HTTPException, FastAPI
 from pydantic import ValidationError
 from database.db import add_user
 
+app = FastAPI
 router = APIRouter()
 
 @router.post("/register")

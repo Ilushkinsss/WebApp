@@ -5,22 +5,23 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import mysql.connector
 
 API_TOKEN = '7336746673:AAF3_vUh_Sm01UpRBSH-1T8aOC5A_czJZ5c'
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-app = FastAPI() #API
+app = FastAPI()  # API
 
 # Настройка подключения к базе данных
 db_config = {
     'host': 'localhost',
-    'user': 'your_user',
-    'password': 'your_password',
-    'database': 'telegram_bot'
+    'user': 'root',
+    'password': '861211955233iK',
+    'database': 'mysql'
 }
+
+
 
 class User(BaseModel):
     telegram_id: str
@@ -28,63 +29,41 @@ class User(BaseModel):
     gender: str
     age: int
 
-
-@app.post("/register")
-def register(user: User):
-    try:
-        # Подключение к базе данных
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-
-        # Вставка данных в базу данных
-        cursor.execute(
-            "INSERT INTO Users (telegram_id, city, gender, age) VALUES (%s, %s, %s, %s)",
-            (user.telegram_id, user.city, user.gender, user.age)
-        )
-        conn.commit()
-
-        return {"success": "true"}
-
-    except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail=f"Database error: {err}")
-
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
-
-logging.basicConfig(level=logging.INFO)
+# Глобальная переменная для пула базы данных
+db_pool = None
 
 async def create_db_pool():
     return await aiomysql.create_pool(
-        host='localhost',
+        host=db_config['host'],
         port=3306,
-        user='root',
-        password='861211955233iK',
-        db='mysql'
+        user=db_config['user'],
+        password=db_config['password'],
+        db=db_config['database']
     )
 
-async def create_user_table():
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS USER (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    telegram_id BIGINT NOT NULL,
-                    city VARCHAR(100),
-                    gender ENUM('male', 'female', 'other'),
-                    balance DECIMAL(10, 2) DEFAULT 0.00,
-                    total_tickets INT DEFAULT 0
+@app.get("/")
+async def read_root():
+    return {"Hello": "World"}
+
+@app.post("/register")
+async def register(user: User):
+    if db_pool is None:
+        return {"success": "false", "error": "Database pool is not initialized."}
+
+    try:
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "INSERT INTO Users (telegram_id, city, gender, age) VALUES (%s, %s, %s, %s)",
+                    (user.telegram_id, user.city, user.gender, user.age)
                 )
-            """)
-            await conn.commit()
+                await conn.commit()
+        return {"success": "true"}
+    except Exception as e:
+        return {"success": "false", "error": str(e)}
 
-async def add_user(user_id, username):
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("INSERT IGNORE INTO users (user_id, username) VALUES (%s, %s)", (user_id, username))
-            await conn.commit()
-
+    except aiomysql.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database error: {err}")
 
 @dp.message(Command("start"))
 async def send_welcome(message: types.Message):
@@ -101,3 +80,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
